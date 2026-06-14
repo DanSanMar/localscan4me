@@ -1,12 +1,11 @@
-# Scan4me Home 🏠
+# lscan4me 🏠
 
-**Scan4me Home** es una herramienta Bash automática pensada para redes locales domésticas. Su objetivo es descubrir hosts activos en tu propia red, revisar servicios expuestos y señalar posibles vulnerabilidades conocidas, todo con un solo flujo simple y sin menús complejos.
+**lscan4me** es una herramienta Bash automática pensada para redes locales domésticas. Descubre hosts activos, revisa servicios expuestos y recoge un informe simple de posibles vulnerabilidades conocidas, todo en un único flujo automático.
 
-**Scan4me** es una solución de automatización en Bash diseñada para simplificar las fases de **reconocimiento y enumeración** en una auditoría de red. El script actúa como una capa de orquestación que integra herramientas de bajo nivel, permitiendo al auditor centrarse en el análisis de datos en lugar de en la sintaxis compleja de los comandos.
 
-La herramienta ahora está orientada a un uso doméstico y automatizado:
+Flujo actual de la herramienta:
 
-1. Detecta la interfaz activa y la subred local.
+1. Detecta la interfaz de red activa y la subred local.
 2. Descubre hosts vivos con ARP Scan.
 3. Ejecuta un análisis rápido de servicios y vulnerabilidades conocidas con Nmap.
 4. Guarda un reporte automático en tu escritorio para revisión.
@@ -34,9 +33,9 @@ Una característica distintiva es su sistema de salida. Aunque el script se ejec
 ---
 
 ### ⚙️ Especificaciones Técnicas
-* **Lenguaje:** Bash Scripting.
-* **Compatibilidad:** Sistemas basados en Debian (Kali Linux, Parrot OS, Ubuntu).
-* **Estética:** Soporte para terminales xterm-256color con feedback visual mediante estados de carga (spinners).
+* **Lenguaje:** Bash.
+* **Compatibilidad:** Sistemas Linux basados en Debian (Ubuntu, Kali, Parrot, etc.).
+* **Herramientas usadas:** `arp-scan` y `nmap`.
 
 ---
 
@@ -51,11 +50,11 @@ Una característica distintiva es su sistema de salida. Aunque el script se ejec
 
 ## 🛠️ Requisitos previos
 
-El script requiere las siguientes herramientas instaladas en tu sistema Linux:
+El script requiere estas herramientas instaladas:
 
 ```bash
 sudo apt update
-sudo apt install nmap arp-scan netdiscover -y
+sudo apt install nmap arp-scan -y
 ```
 
 ---
@@ -65,10 +64,10 @@ sudo apt install nmap arp-scan netdiscover -y
 Ejecuta el script directamente con sudo:
 
 ```bash
-sudo ./Scan4me.sh
+sudo ./lscan4me
 ```
 
-No requiere interacción manual: el programa detecta la red, escanea la red local y genera un reporte automáticamente.
+No requiere interacción manual: detecta la red, escanea la red local y genera un reporte automáticamente.
 
 ---
 
@@ -89,42 +88,39 @@ Usa esta herramienta solo en redes que controles o en las que tengas autorizaci�
 ---
 
 
-1. **Clona el repositorio:**
+1. **Entra a la carpeta del proyecto:**
    ```bash
-   git clone https://github.com/DanSanMar/Scan4me.git
-   cd Scan4me
+   cd /ruta/del/proyecto
    ```
 
 2. **Dale permisos de ejecución:**
    ```bash
-   chmod +x Scan4me.sh
+   chmod +x lscan4me
    ```
 
-3. **Ejecútalo con privilegios de root:**
+3. **Ejecuta la herramienta:**
    ```bash
-   sudo ./Scan4me.sh
+   sudo ./lscan4me
    ```
 
 ---
 
-## 📋 Menú de Herramientas
+## 📋 Qué hace la herramienta
 
-| Opción | Comando Base | Propósito |
+| Paso | Comando base | Propósito |
 | :--- | :--- | :--- |
-| **Escaneo Automático** | `ip route` | Detectar red local. |
-| **ARP Sigiloso** | `arp-scan -i 250` | Evitar detección por IDS. |
-| **Netdiscover Pasivo** | `netdiscover -p` | Escucha silenciosa. |
-| **Nmap Stealth Scan** | `nmap -sS` | Escaneo SYN "invisible". |
-| **Análisis Exhaustivo** | `nmap --script vuln` | Buscar vulnerabilidades. |
+| Detección de red | `ip route` | Identificar la interfaz activa y la subred local. |
+| Descubrimiento de hosts | `arp-scan --localnet` | Encontrar dispositivos activos en tu red doméstica. |
+| Análisis de vulnerabilidades | `nmap -Pn -sV --script vuln` | Revisar servicios y fallos conocidos. |
 
 ---
 
 ## 📁 Gestión de Reportes
 
-El script detecta automáticamente tu usuario para guardar los logs en:
-* `~/Desktop/Auditoria_...txt` (o `/Escritorio/`).
+El script guarda el reporte en:
+* `~/Desktop/Auditoria_Hogar_...txt` (o `/Escritorio/`).
 
-Los archivos se crean con permisos para tu usuario normal, facilitando su lectura posterior.
+El archivo se crea con permisos para tu usuario normal para que puedas abrirlo fácilmente.
 
 ---
 
