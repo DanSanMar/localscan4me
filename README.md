@@ -1,10 +1,15 @@
-# Auditoría de Red 🛡️
+# Scan4me Home 🏠
 
-**Scan4me** es una solución de automatización en Bash diseñada para simplificar las fases de **reconocimiento y enumeración** en una auditoría de red. El script actúa como una capa de orquestación que integra herramientas de bajo nivel, permitiendo al auditor centrarse en el análisis de datos en lugar de en la sintaxis compleja de los comandos.
+**Scan4me Home** es una herramienta Bash automática pensada para redes locales domésticas. Su objetivo es descubrir hosts activos en tu propia red, revisar servicios expuestos y señalar posibles vulnerabilidades conocidas, todo con un solo flujo simple y sin menús complejos.
 
-### 🛡️ Arquitectura y Funcionamiento
+### 🏠 Enfoque actual
 
-El script está estructurado en cuatro módulos principales que cubren el ciclo de vida inicial de un pentesting de red:
+La herramienta ahora está orientada a un uso doméstico y automatizado:
+
+1. Detecta la interfaz activa y la subred local.
+2. Descubre hosts vivos con ARP Scan.
+3. Ejecuta un análisis rápido de servicios y vulnerabilidades conocidas con Nmap.
+4. Guarda un reporte automático en tu escritorio para revisión.
 
 #### 1. Módulo de Reconocimiento Inteligente
 A diferencia de otros scripts que requieren la entrada manual del rango de red, ALL4ME utiliza el comando `ip route` para identificar la **interfaz de red activa** y calcular automáticamente la **subred CIDR**. Esto minimiza errores humanos y acelera el despliegue en entornos desconocidos.
@@ -56,6 +61,33 @@ sudo apt install nmap arp-scan netdiscover -y
 ---
 
 ## 🚀 Instalación y Uso
+
+Ejecuta el script directamente con sudo:
+
+```bash
+sudo ./Scan4me.sh
+```
+
+No requiere interacción manual: el programa detecta la red, escanea la red local y genera un reporte automáticamente.
+
+---
+
+## 📌 Uso recomendado
+
+Esta herramienta está pensada para:
+* revisar tu propia red doméstica,
+* encontrar dispositivos activos,
+* detectar servicios expuestos,
+* recopilar evidencia para análisis personal o de seguridad.
+
+---
+
+## ⚠️ Aviso
+
+Usa esta herramienta solo en redes que controles o en las que tengas autorización explícita.
+
+---
+
 
 1. **Clona el repositorio:**
    ```bash
