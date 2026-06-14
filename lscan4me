@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# --- COLORES Y ESTÉTICA ---
+# --- CONFIGURACIÓN DE COLORES ---
 export TERM=xterm-256color
 BLANCO="\e[1;37m"
 AZUL="\e[1;36m"
@@ -9,17 +9,24 @@ ROJO="\e[1;31m"
 VERDE="\e[1;32m"
 RESET="\e[0m"
 
-# --- CONFIGURACIÓN DE RUTAS ---
-# Detectamos el usuario real si se ejecuta con sudo
-REAL_USER=$(logname 2>/dev/null || echo $USER)
+# --- CONFIGURACIÓN DE RUTAS Y TEMPORALES ---
+REAL_USER=$(logname 2>/dev/null || echo "$USER")
 DESKTOP_PATH="/home/$REAL_USER/Desktop"
 [ ! -d "$DESKTOP_PATH" ] && DESKTOP_PATH="/home/$REAL_USER/Escritorio"
 
-# --- FUNCIONES DE APOYO ---
+# Crear un directorio de trabajo temporal seguro
+WORKDIR=$(mktemp -d /tmp/lscan_XXXXXX)
+SCAN_HOSTS_TXT="$WORKDIR/hosts_activos.txt"
+
+# --- MANEJO DE INTERRUPCIONES (TRAP) ---
+# Asegura que si presionas Ctrl+C, no queden archivos basura en el sistema
+trap 'echo -e "\n${ROJO}[!] Escaneo interrumpido por el usuario. Limpiando temporales...${RESET}"; rm -rf "$WORKDIR"; exit 1' SIGINT SIGTERM
+
+# --- FUNCIONES DE CONTROL ---
 
 function check_sudo() {
     if [ "$EUID" -ne 0 ]; then
-        echo -e "${ROJO}Error: Este script requiere privilegios de superusuario.${RESET}"
+        echo -e "${ROJO}Error: Este script requiere privilegios de superusuario (root).${RESET}"
         echo -e "${AZUL}Por favor, ejecútalo con: ${BLANCO}sudo $0${RESET}"
         exit 1
     fi
@@ -28,99 +35,126 @@ function check_sudo() {
 function mostrar_logo() {
     clear
     echo -e "${AZUL}"
-    echo "  █████  ██      ██      ██   ██ ███    ███ ███████ "
-    echo " ██   ██ ██      ██      ██   ██ ████  ████ ██      "
-    echo " ███████ ██      ██      ███████ ██ ████ ██ █████   "
+    echo "  █████  ██      ██      ██    ██ ███    ███ ███████ "
+    echo " ██   ██ ██      ██      ██    ██ ████  ████ ██      "
+    echo " ███████ ██      ██      ███████ ██ ████ ██ █████    "
     echo " ██   ██ ██      ██           ██ ██  ██  ██ ██      "
     echo " ██   ██ ███████ ███████      ██ ██      ██ ███████ "
-    echo -e "${BLANCO}  Versión 1.3 - lscan4me ${RESET}"
+    echo -e "${BLANCO}   Versión 3.0 - Auditoría Avanzada y Evasión ${RESET}"
     echo -e "${AZUL}  --------------------------------------------------${RESET}"
-    echo -e "${AMARILLO}  Herramienta automática para redes domésticas.${RESET}"
-    echo -e "${AMARILLO}  Usa esta herramienta solo en tu red y con autorización.${RESET}\n"
+    echo -e "${AMARILLO}   Uso exclusivo para redes autorizadas y auditorías internas.${RESET}\n"
 }
 
 function comprobar_herramientas() {
-    local herramientas=(arp-scan nmap)
+    local herramientas=(arp-scan nmap ip awk)
     for herramienta in "${herramientas[@]}"; do
         if ! command -v "$herramienta" >/dev/null 2>&1; then
-            echo -e "${ROJO}Falta la herramienta: $herramienta${RESET}"
-            echo -e "${AZUL}Instálala con: ${BLANCO}sudo apt install nmap arp-scan -y${RESET}"
+            echo -e "${ROJO}Falta la herramienta indispensable: $herramienta${RESET}"
             exit 1
         fi
     done
 }
 
-function detectar_red_hogar() {
-    INTERFAZ=$(ip route get 1.1.1.1 2>/dev/null | awk '{print $5; exit}')
-    SUBRED=$(ip route | awk -v iface="$INTERFAZ" '$1 !~ /^default/ && $5==iface {print $1; exit}')
+function detectar_red() {
+    INTERFAZ=$(ip route show default 2>/dev/null | awk '/default/ {print $5; exit}')
+    if [ -z "$INTERFAZ" ]; then
+        INTERFAZ=$(ip -o link show | awk -F': ' '$3 !~ /lo|virbr/ {print $2; exit}')
+    fi
+
+    SUBRED=$(ip route show dev "$INTERFAZ" | awk 'NR==1 {print $1}')
 
     if [[ -z "$INTERFAZ" || -z "$SUBRED" ]]; then
-        echo -e "${ROJO}No se pudo detectar la red local.${RESET}"
+        echo -e "${ROJO}Error: No se pudo determinar la interfaz o subred activa.${RESET}"
         exit 1
     fi
 
-    echo -e "${VERDE}Interfaz activa:${BLANCO} $INTERFAZ${RESET}"
-    echo -e "${VERDE}Red local detectada:${BLANCO} $SUBRED${RESET}"
+    echo -e "${VERDE}[+] Interfaz activa:${BLANCO} $INTERFAZ${RESET}"
+    echo -e "${VERDE}[+] Red detectada:${BLANCO} $SUBRED${RESET}"
 }
 
 function descubrir_hosts() {
-    echo -e "\n${AZUL}[1/3] Descubriendo hosts activos en tu red doméstica...${RESET}"
-    arp-scan --localnet -I "$INTERFAZ" --quiet 2>/tmp/scan_hosts.txt || true
-    cat /tmp/scan_hosts.txt
+    echo -e "\n${AZUL}[1/3] Iniciando descubrimiento de hosts (Capa 2: ARP)...${RESET}"
+    arp-scan --interface="$INTERFAZ" --localnet --quiet > "$SCAN_HOSTS_TXT" 2>/dev/null
+    cat "$SCAN_HOSTS_TXT"
 }
 
 function analizar_hosts() {
-    echo -e "\n${AZUL}[2/3] Escaneando servicios y vulnerabilidades conocidas...${RESET}"
+    echo -e "\n${AZUL}[2/3] Analizando servicios, vulnerabilidades y evadiendo firewalls...${RESET}"
+    echo -e "${AMARILLO}[*] Nota: Este proceso puede tardar debido a los scripts de vulnerabilidad.${RESET}"
+    
     local hosts
-    hosts=$(awk 'NR>1 {print $1}' /tmp/scan_hosts.txt 2>/dev/null | grep -E '^[0-9.]+' || true)
+    hosts=$(awk '/^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/ {print $1}' "$SCAN_HOSTS_TXT")
 
     if [[ -z "$hosts" ]]; then
-        echo -e "${AMARILLO}No se detectaron hosts activos.${RESET}"
+        echo -e "${AMARILLO}[!] No se detectaron hosts activos en la capa ARP.${RESET}"
         return
     fi
 
     for host in $hosts; do
-        echo -e "\n${BLANCO}Analizando:${RESET} $host"
-        nmap -Pn -sV --top-ports 50 --script vuln "$host" 2>/tmp/scan_host_$host.txt || true
-        cat /tmp/scan_host_$host.txt
+        echo -e "\n${BLANCO}Auditando host:${RESET} ${AMARILLO}$host${RESET}"
+        
+        local temp_host_file="$WORKDIR/scan_${host}.txt"
+        
+        # --- TÉCNICAS AVANZADAS DE EVASIÓN Y VULNERABILIDAD ---
+        # -Pn: Omite el ping (evita bloqueos ICMP).
+        # -sS: TCP SYN Scan (silencioso).
+        # -f: Fragmenta los paquetes IP para evadir inspección profunda (DPI) y firewalls estrictos.
+        # -g 53: Falsifica el puerto de origen haciéndose pasar por tráfico DNS (muchos firewalls confían en el puerto 53).
+        # -D RND:3: Envía paquetes desde 3 IPs señuelo aleatorias para ofuscar tu IP real en los logs del objetivo.
+        # --data-length 32: Añade payloads aleatorios para romper firmas de tamaño de paquetes.
+        # --script vuln: Lanza el motor de vulnerabilidades de Nmap.
+        # --host-timeout 10m: Evita que un host "tarpit" congele el script eternamente.
+        
+        nmap -Pn -sS -f -g 53 -D RND:3 --data-length 32 -sV --top-ports 100 --script vuln --host-timeout 10m "$host" > "$temp_host_file" 2>/dev/null
+        
+        cat "$temp_host_file" | grep -v "filtered" | grep -v "closed" # Limpia el output de ruido innecesario
+        echo "--------------------------------------------------"
     done
 }
 
 function guardar_reporte() {
-    local fecha
-    local ruta
-    fecha=$(date +"%Y%m%d_%H%M")
-    ruta="$DESKTOP_PATH/Auditoria_Hogar_${fecha}.txt"
+    local fecha=$(date +"%Y%m%d_%H%M")
+    local ruta="$DESKTOP_PATH/Auditoria_Avanzada_${fecha}.txt"
 
     {
-        echo "--- AUDITORÍA HOME SCAN ---"
-        echo "Fecha: $(date)"
-        echo "Interfaz: $INTERFAZ"
-        echo "Subred: $SUBRED"
+        echo "=================================================="
+        echo "    REPORTE DE AUDITORÍA AVANZADA Y EVASIÓN       "
+        echo "=================================================="
+        echo "Fecha:       $(date)"
+        echo "Interfaz:    $INTERFAZ"
+        echo "Subred:      $SUBRED"
+        echo "=================================================="
         echo ""
-        echo "[DESCUBRIMIENTO DE HOSTS]"
-        cat /tmp/scan_hosts.txt 2>/dev/null
+        echo "[1] HOSTS DETECTADOS (CAPA 2):"
+        [ -f "$SCAN_HOSTS_TXT" ] && cat "$SCAN_HOSTS_TXT"
         echo ""
-        echo "[ANÁLISIS DE VULNERABILIDADES]"
-        for f in /tmp/scan_host_*.txt; do
-            [ -f "$f" ] && cat "$f"
+        echo "[2] VULNERABILIDADES Y SERVICIOS DESCUBIERTOS:"
+        for f in "$WORKDIR"/scan_*.txt; do
+            if [ -f "$f" ]; then
+                local ip_scan=$(basename "$f" | sed 's/scan_//;s/.txt//')
+                echo -e "\n--- Resultados para $ip_scan ---"
+                cat "$f"
+            fi
         done
     } > "$ruta"
 
     chown "$REAL_USER:$REAL_USER" "$ruta" 2>/dev/null || true
-    echo -e "\n${VERDE}Reporte guardado en:${BLANCO} $ruta${RESET}"
+    echo -e "\n${VERDE}[+] Reporte completo y seguro guardado en:${BLANCO} $ruta${RESET}"
 }
 
-function escaneo_automatico_hogar() {
+function ejecucion_principal() {
     mostrar_logo
     comprobar_herramientas
-    detectar_red_hogar
+    detectar_red
     descubrir_hosts
     analizar_hosts
     guardar_reporte
-    echo -e "\n${AZUL}Escaneo finalizado. Revisa el archivo generado en tu escritorio.${RESET}"
+    
+    # Limpieza final del entorno de trabajo
+    rm -rf "$WORKDIR"
+    echo -e "\n${AZUL}[*] Auditoría finalizada. Entorno temporal limpiado correctamente.${RESET}"
 }
 
 # --- INICIO ---
 check_sudo
-escaneo_automatico_hogar
+ejecucion_principal
