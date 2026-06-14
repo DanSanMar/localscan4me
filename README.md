@@ -2,7 +2,7 @@
 
 **Scan4me Home** es una herramienta Bash automática pensada para redes locales domésticas. Su objetivo es descubrir hosts activos en tu propia red, revisar servicios expuestos y señalar posibles vulnerabilidades conocidas, todo con un solo flujo simple y sin menús complejos.
 
-### 🏠 Enfoque actual
+**Scan4me** es una solución de automatización en Bash diseñada para simplificar las fases de **reconocimiento y enumeración** en una auditoría de red. El script actúa como una capa de orquestación que integra herramientas de bajo nivel, permitiendo al auditor centrarse en el análisis de datos en lugar de en la sintaxis compleja de los comandos.
 
 La herramienta ahora está orientada a un uso doméstico y automatizado:
 
