@@ -25,7 +25,7 @@ REAL_USER=$(logname 2>/dev/null || echo "${SUDO_USER:-$USER}")
 GRUPO_REAL=$(id -gn "$REAL_USER")
 
 if command -v xdg-user-dir >/dev/null 2>&1; then
-    DESKTOP_PATH=$(su - "$REAL_USER" -c "xdg-user-dir DESKTOP")
+    DESKTOP_PATH=$(sudo -u "$REAL_USER" xdg-user-dir DESKTOP)
 else
     DESKTOP_PATH="/home/$REAL_USER/Desktop"
     [[ ! -d "$DESKTOP_PATH" ]] && DESKTOP_PATH="/home/$REAL_USER/Escritorio"
@@ -209,6 +209,29 @@ analizar_hosts() {
     wait
 }
 
+# ---------- MOSTRAR RESULTADOS ----------
+mostrar_resultados() {
+    echo
+    echo -e "${AZUL}[3/3] Mostrando resultados de la auditoría...${RESET}"
+    echo "======================================"
+    
+    # Comprobar si hay archivos de texto generados
+    if ls "$RESULTS_DIR"/*.txt 1> /dev/null 2>&1; then
+        for f in "$RESULTS_DIR"/*.txt; do
+            [[ -f "$f" ]] || continue
+            echo
+            echo -e "${AMARILLO}--------------------------------------${RESET}"
+            # basename "$f" .txt quita la extensión para mostrar solo la IP
+            echo -e "${VERDE}Host: $(basename "$f" .txt)${RESET}"
+            echo -e "${AMARILLO}--------------------------------------${RESET}"
+            cat "$f"
+        done
+    else
+        echo -e "${ROJO}No se generaron resultados para mostrar.${RESET}"
+    fi
+    echo "======================================"
+}
+
 # ---------- REPORTE ----------
 guardar_reporte() {
     local fecha
@@ -236,17 +259,31 @@ guardar_reporte() {
             [[ -f "$f" ]] || continue
             echo
             echo "--------------------------------------"
-            echo "$(basename "$f")"
+            echo "Host: $(basename "$f" .txt)"
             echo "--------------------------------------"
             cat "$f"
         done
     } > "$reporte"
 
-    # Se aplica el chown correcto usando el grupo real al momento en que el reporte ya existe
+    # Se aplica el chown correcto usando el grupo real
     chown "$REAL_USER:$GRUPO_REAL" "$reporte" 2>/dev/null || true
 
     echo
-    echo -e "${VERDE}[+] Reporte:${RESET} $reporte"
+    echo -e "${VERDE}[+] Reporte guardado en:${RESET} $reporte"
+}
+
+# ---------- PREGUNTAR GUARDADO ----------
+preguntar_guardar() {
+    echo
+    read -rp "¿Deseas guardar estos resultados en un archivo de texto? (s/n): " RESPUESTA
+    case "${RESPUESTA,,}" in # Convierte a minúscula
+        s|si|y|yes)
+            guardar_reporte
+            ;;
+        *)
+            echo -e "${AZUL}Reporte descartado.${RESET}"
+            ;;
+    esac
 }
 
 # ---------- MAIN ----------
@@ -259,12 +296,12 @@ main() {
     descubrir_hosts
     analizar_hosts
     
-    echo
-    echo -e "${AZUL}[3/3] Generando reporte...${RESET}"
-    guardar_reporte
+    # Nuevo flujo de finalización
+    mostrar_resultados
+    preguntar_guardar
 
     echo
-    echo -e "${VERDE}Auditoría finalizada correctamente.${RESET}"
+    echo -e "${VERDE}Auditoría finalizada.${RESET}"
 }
 
 main
