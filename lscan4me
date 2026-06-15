@@ -2,7 +2,7 @@
 
 # ==========================================================
 # Local Network Security Audit (Home Edition)
-# Versión 5.0 - FZF Interactive Edition
+# Versión 5.5 - FZF Interactive & Device Identification
 # Uso exclusivo en redes propias o autorizadas
 # ==========================================================
 
@@ -49,16 +49,15 @@ trap cleanup EXIT INT TERM
 mostrar_logo() {
     clear
     echo -e "${AZUL}"
-    echo "  █████  ██      ██      ██    ██ ███    ███ ███████ "
-    echo " ██   ██ ██      ██      ██    ██ ████  ████ ██      "
+    echo "  █████  ██      ██      ██   ██ ███    ███ ███████ "
+    echo " ██   ██ ██      ██      ██   ██ ████  ████ ██      "
     echo " ███████ ██      ██      ███████ ██ ████ ██ █████    "
     echo " ██   ██ ██      ██           ██ ██  ██  ██ ██      "
-    echo " ██   ██ ███████ ███████     ██ ██      ██ ███████ "
-    echo -e "${BLANCO}   Versión 5.0 - Motor FZF Inteligente ${RESET}"
-    echo -e "${AZUL}  --------------------------------------------------${RESET}"
+    echo " ██   ██ ███████ ███████      ██ ██      ██ ███████ "
+    echo -e "${BLANCO}     Versión 5.5 - Identificación Inteligente sin Puertos ${RESET}"
+    echo -e "${AZUL}  ------------------------------------------------------------${RESET}"
     echo -e "${AMARILLO}   Uso exclusivo para redes autorizadas y auditorías internas.${RESET}\n"
 }
-
 # ---------- VALIDACIONES ----------
 check_root() {
     if [[ $EUID -ne 0 ]]; then
@@ -72,7 +71,6 @@ check_tools() {
     for t in "${tools[@]}"; do
         if ! command -v "$t" >/dev/null 2>&1; then
             echo -e "${ROJO}Falta herramienta requerida:${RESET} $t"
-            echo -e "${AMARILLO}Puedes instalarla con:${RESET} apt install $t"
             exit 1
         fi
     done
@@ -88,13 +86,18 @@ detectar_red() {
     echo -e "${VERDE}[+] Subred detectada:${RESET} $SUBRED"
 }
 
-# ---------- RECONOCIMIENTO ÚNICO (PASO 1) ----------
+# ---------- RECONOCIMIENTO ÚNICO ----------
+# ---------- RECONOCIMIENTO ÚNICO ----------
 reconocimiento_inicial() {
     echo
-    echo -e "${AZUL}[i] Realizando mapeo inicial de la red...${RESET}"
+    echo -e "${AMARILLO}┌────────────────────────────────────────────────────────┐${RESET}"
+    echo -e "${AMARILLO}│${RESET}  ${AZUL}🔍 [1/2] ESCANEANDO LA RED LOCAL POR PRIMERA VEZ...${RESET}   ${AMARILLO}│${RESET}"
+    echo -e "${AMARILLO}│${RESET}  ${BLANCO}Por favor, espera. Localizando dispositivos activos...${RESET} ${AMARILLO}│${RESET}"
+    echo -e "${AMARILLO}└────────────────────────────────────────────────────────┘${RESET}"
+    echo
+    
     arp-scan --interface="$INTERFAZ" --localnet --quiet > "$HOSTS_FILE"
     
-    # Validar que encontramos algo
     if ! grep -q '^[0-9]' "$HOSTS_FILE"; then
         echo -e "${ROJO}[!] No se encontraron hosts activos en la subred.${RESET}"
         exit 1
@@ -104,31 +107,30 @@ reconocimiento_inicial() {
 # ---------- SELECCIONAR OBJETIVO (FZF) ----------
 seleccionar_host() {
     mostrar_logo
-    echo -e "${AZUL}Seleccione el dispositivo a analizar (Use las flechas o escriba para filtrar):${RESET}"
+    echo -e "${AZUL}Seleccione el dispositivo a analizar:${RESET}"
     echo "----------------------------------------------------------------"
     
-    # Preparamos la lista para FZF filtrando solo líneas con IPs válidas
     local seleccion
     seleccion=$(awk '/^[0-9]+\./ {print $1 " | " substr($0, index($0,$2))}' "$HOSTS_FILE" \
-                | fzf --header="[ESC] Salir | Seleccione un Host" --ansi --height=40% --border)
-    
+                | fzf --header="[ESC] Salir | Seleccione un Host" --layout=reverse --no-sort --ansi --height=40% --border)
     if [[ -z "$seleccion" ]]; then
         echo -e "${AMARILLO}Saliendo del auditor...${RESET}"
         exit 0
     fi
 
-    # Extraemos solo la IP (lo que está antes del pipe)
     TARGET_IP=$(echo "$seleccion" | awk -F'|' '{print $1}' | tr -d '[:space:]')
+    # Extraemos los datos de la MAC y fabricante recolectados por arp-scan
+    TARGET_VENDOR=$(echo "$seleccion" | awk -F'|' '{print $2}' | sed 's/^[ \t]*//')
 }
 
-# ---------- SELECCIONAR MODO DE ESCANEO (FZF) ----------
+# ---------- SELECCIONAR MODO DE ESCANEO ----------
 seleccionar_modo_scan() {
     echo
     echo -e "${AZUL}Seleccione el perfil de análisis para${RESET} ${VERDE}$TARGET_IP${RESET}:"
     echo "----------------------------------------------------------------"
 
     local opciones=(
-        "1. Inspección Rápida (Ping Scan -sn)"
+        "1. Identificación Pasiva e Identidad"
         "2. Investigación de Servicios (Top 100 Puertos + Versiones -sV)"
         "3. Seguridad Doméstica (Top 100 + Scripts Seguros + OS -O)"
         "4. Auditoría TLS Avanzada (Cifrados SSL/TLS exhaustivos)"
@@ -136,32 +138,54 @@ seleccionar_modo_scan() {
     )
 
     local eleccion
-    eleccion=$(printf "%s\n" "${opciones[@]}" | fzf --header="Seleccione Perfil Nmap" --height=30% --border)
+    eleccion=$(printf "%s\n" "${opciones[@]}" | fzf --header="Seleccione Perfil Nmap" --layout=reverse --no-sort --height=30% --border)
 
     case "$eleccion" in
         *1.*) MODO=1 ;;
         *2.*) MODO=2 ;;
         *3.*) MODO=3 ;;
         *4.*) MODO=4 ;;
-        *) return 1 ;; # Rompe y vuelve a la lista de IPs
+        *) return 1 ;;
     esac
     return 0
 }
 
 # ---------- LANZAR NMAP EN VIVO ----------
+# ---------- LANZAR NMAP EN VIVO ----------
 ejecutar_scan() {
     echo
-    echo -e "${AMARILLO}==================================================${RESET}"
-    echo -e "${VERDE} AUDITANDO TARGET: ${BLANCO}$TARGET_IP${RESET}"
-    echo -e "${AMARILLO}==================================================${RESET}"
+    echo -e "${AMARILLO}┌────────────────────────────────────────────────────────┐${RESET}"
+    echo -e "${AMARILLO}│${RESET}  ${VERDE}🚀 AUDITORÍA EN PROCESO EN TIEMPO REAL${RESET}                 ${AMARILLO}│${RESET}"
+    echo -e "${AMARILLO}│${RESET}  ${AZUL}Objetivo:${RESET} ${BLANCO}$TARGET_IP${RESET}                               ${AMARILLO}│${RESET}"
+    echo -e "${AMARILLO}│${RESET}  ${AMARILLO}Nota:${RESET} ${BLANCO}Nmap reportará su estado en pantalla en vivo.${RESET}    ${AMARILLO}│${RESET}"
+    echo -e "${AMARILLO}└────────────────────────────────────────────────────────┘${RESET}"
+    echo
     
     local out="$RESULTS_DIR/$TARGET_IP"
 
     case "$MODO" in
-        1) nmap -Pn -sn "$TARGET_IP" -oN "${out}.txt" ;;
-        2) nmap -Pn -sS -sV --top-ports 100 --host-timeout 5m "$TARGET_IP" -oN "${out}.txt" ;;
-        3) nmap -Pn -sS -sV -O --top-ports 100 --script "safe" --host-timeout 5m "$TARGET_IP" -oN "${out}.txt" ;;
-        4) nmap -Pn -sS -sV -O --top-ports 100 --script "safe,ssl-enum-ciphers" --host-timeout 10m "$TARGET_IP" -oN "${out}.txt" ;;
+        1)
+            echo -e "${AZUL}[i] Extrayendo datos de fabricante y difusiones de red...${RESET}"
+            echo -e "${VERDE}Fabricante de Tarjeta (ARP):${RESET} $TARGET_VENDOR"
+            echo "--------------------------------------------------"
+            
+            echo "Fabricante (Detección ARP): $TARGET_VENDOR" > "${out}.txt"
+            echo "--------------------------------------------------" >> "${out}.txt"
+            
+            # El modo 1 es casi instantáneo, no requiere stats continuos
+            nmap -Pn -sn --script="nbstat,dns-brute,snmp-sysdescr,smb-os-discovery" "$TARGET_IP" >> "${out}.txt"
+            cat "${out}.txt"
+        ;;
+        2) 
+            # --stats-every 5s le obliga a Nmap a imprimir su progreso cada 5 segundos en tu pantalla
+            nmap -Pn -sS -sV --top-ports 100 --stats-every 5s --host-timeout 5m "$TARGET_IP" -oN "${out}.txt" 
+        ;;
+        3) 
+            nmap -Pn -sS -sV -O --top-ports 100 --script "safe" --stats-every 5s --host-timeout 5m "$TARGET_IP" -oN "${out}.txt" 
+        ;;
+        4) 
+            nmap -Pn -sS -sV -O --top-ports 100 --script "safe,ssl-enum-ciphers" --stats-every 5s --host-timeout 10m "$TARGET_IP" -oN "${out}.txt" 
+        ;;
     esac
 }
 
@@ -175,7 +199,7 @@ guardar_reporte() {
     if [[ -f "$source_file" ]]; then
         {
             echo "=================================================="
-            echo " REPORTE DE AUDITORÍA INDIVIDUAL"
+            echo " REPORTE DE RECONOCIMIENTO DE DISPOSITIVO"
             echo "=================================================="
             echo "Objetivo: $TARGET_IP"
             echo "Fecha:    $(date)"
@@ -202,24 +226,14 @@ preguntar_guardar() {
 main() {
     mostrar_logo
     detectar_red
-    
-    # PASO ÚNICO: Escaneo de red inicial
     reconocimiento_inicial
     
-    # BUCLE INFINITO: Mantiene la lista de IPs fijas en memoria sin repetir arp-scan
     while true; do
-        # 1. Elige IP desde la caché
         seleccionar_host
-        
-        # 2. Elige modo de escaneo (Si elige volver, salta al paso 1)
         if ! seleccionar_modo_scan; then
             continue
         fi
-        
-        # 3. Ejecuta Nmap en vivo
         ejecutar_scan
-        
-        # 4. Ofrece guardar los resultados
         preguntar_guardar
         
         echo
@@ -228,7 +242,6 @@ main() {
     done
 }
 
-# Inicialización obligatoria como Root y herramientas
 check_root
 check_tools
 main
