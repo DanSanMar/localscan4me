@@ -54,7 +54,7 @@ mostrar_logo() {
     echo " ███████ ██      ██      ███████ ██ ████ ██ █████    "
     echo " ██   ██ ██      ██           ██ ██  ██  ██ ██      "
     echo " ██   ██ ███████ ███████      ██ ██      ██ ███████ "
-    echo -e "${BLANCO}     Versión 5.5 - Identificación Inteligente sin Puertos ${RESET}"
+    echo -e "${BLANCO}     Versión 5.5 - Identificación Inteligente ${RESET}"
     echo -e "${AZUL}  ------------------------------------------------------------${RESET}"
     echo -e "${AMARILLO}   Uso exclusivo para redes autorizadas y auditorías internas.${RESET}\n"
 }
@@ -87,12 +87,11 @@ detectar_red() {
 }
 
 # ---------- RECONOCIMIENTO ÚNICO ----------
-# ---------- RECONOCIMIENTO ÚNICO ----------
 reconocimiento_inicial() {
     echo
-    echo -e "${AMARILLO}┌────────────────────────────────────────────────────────┐${RESET}"
-    echo -e "${AMARILLO}│${RESET}  ${AZUL}🔍 [1/2] ESCANEANDO LA RED LOCAL POR PRIMERA VEZ...${RESET}   ${AMARILLO}│${RESET}"
-    echo -e "${AMARILLO}│${RESET}  ${BLANCO}Por favor, espera. Localizando dispositivos activos...${RESET} ${AMARILLO}│${RESET}"
+    echo -e "${AMARILLO}┌────────────────────────────────────── ──────────────────┐${RESET}"
+    echo -e "${AMARILLO}${RESET}  ${AZUL}🔍 [1/2] ESCANEANDO LA RED LOCAL POR PRIMERA VEZ...${RESET}   ${AMARILLO}${RESET}"
+    echo -e "${AMARILLO}${RESET}  ${BLANCO}Por favor, espera. Localizando dispositivos activos...${RESET} ${AMARILLO}${RESET}"
     echo -e "${AMARILLO}└────────────────────────────────────────────────────────┘${RESET}"
     echo
     
@@ -150,14 +149,14 @@ seleccionar_modo_scan() {
     return 0
 }
 
-# ---------- LANZAR NMAP EN VIVO ----------
-# ---------- LANZAR NMAP EN VIVO ----------
+u
+# ---------- LANZAR SCAN ----------
 ejecutar_scan() {
     echo
     echo -e "${AMARILLO}┌────────────────────────────────────────────────────────┐${RESET}"
-    echo -e "${AMARILLO}│${RESET}  ${VERDE}🚀 AUDITORÍA EN PROCESO EN TIEMPO REAL${RESET}                 ${AMARILLO}│${RESET}"
-    echo -e "${AMARILLO}│${RESET}  ${AZUL}Objetivo:${RESET} ${BLANCO}$TARGET_IP${RESET}                               ${AMARILLO}│${RESET}"
-    echo -e "${AMARILLO}│${RESET}  ${AMARILLO}Nota:${RESET} ${BLANCO}Nmap reportará su estado en pantalla en vivo.${RESET}    ${AMARILLO}│${RESET}"
+    echo -e "${AMARILLO}${RESET}  ${VERDE}🚀 AUDITORÍA EN PROCESO EN TIEMPO REAL${RESET}                 ${AMARILLO}${RESET}"
+    echo -e "${AMARILLO}${RESET}  ${AZUL}Objetivo:${RESET} ${BLANCO}$TARGET_IP${RESET}                               ${AMARILLO}${RESET}"
+    echo -e "${AMARILLO}${RESET}  ${AMARILLO}Nota:${RESET} ${BLANCO}Nmap reportará su estado en pantalla en vivo.${RESET}    ${AMARILLO}${RESET}"
     echo -e "${AMARILLO}└────────────────────────────────────────────────────────┘${RESET}"
     echo
     
@@ -165,26 +164,99 @@ ejecutar_scan() {
 
     case "$MODO" in
         1)
-            echo -e "${AZUL}[i] Extrayendo datos de fabricante y difusiones de red...${RESET}"
+            echo -e "${AZUL}[i] Iniciando Identificación Inteligente de Dispositivo...${RESET}"
             echo -e "${VERDE}Fabricante de Tarjeta (ARP):${RESET} $TARGET_VENDOR"
             echo "--------------------------------------------------"
             
-            echo "Fabricante (Detección ARP): $TARGET_VENDOR" > "${out}.txt"
-            echo "--------------------------------------------------" >> "${out}.txt"
+            # Guardamos la cabecera en el archivo temporal
+            echo "==================================================" > "${out}.txt"
+            echo "REPORTE DE IDENTIFICACIÓN: $TARGET_IP" >> "${out}.txt"
+            echo "Fabricante de Tarjeta (ARP): $TARGET_VENDOR" >> "${out}.txt"
+            echo "==================================================" >> "${out}.txt"
             
-            # El modo 1 es casi instantáneo, no requiere stats continuos
-            nmap -Pn -sn --script="nbstat,dns-brute,snmp-sysdescr,smb-os-discovery" "$TARGET_IP" >> "${out}.txt"
-            cat "${out}.txt"
+            # NUEVA LISTA DE PUERTOS AMPLIADA Y RÁPIDA:
+            # Añadimos 135,139,445 (Samba/Windows) y 5353 (mDNS de Apple/Alexa/Google)
+            local nmap_raw
+            nmap_raw=$(nmap -Pn -sS -sV -p 80,135,139,445,443,5353,5357,62078 --script="nbstat,smb-os-discovery" "$TARGET_IP" 2>/dev/null)
+            
+            # Guardamos la salida bruta en el archivo de texto para el reporte final
+            echo "$nmap_raw" >> "${out}.txt"
+            
+            # --- MOTOR DE CLASIFICACIÓN LOGICA ---
+            local tipo_predicho="Desconocido / Genérico (Posible Firewall Activo)"
+            local vendor_lower
+            vendor_lower=$(echo "$TARGET_VENDOR" | tr '[:upper:]' '[:lower:]')
+            
+            # 1. Detección de Altavoces Inteligentes / IoT asistentes
+            if [[ "$vendor_lower" =~ "amazon" ]] || [[ "$nmap_raw" =~ "Amazon" ]]; then
+                tipo_predicho="Altavoz Inteligente / Dispositivo Echo Alexa"
+            elif [[ "$vendor_lower" =~ "google" ]] || [[ "$nmap_raw" =~ "Google" ]] || [[ "$nmap_raw" =~ "Chromecast" ]]; then
+                tipo_predicho="Asistente Google Home / Chromecast"
+            
+            # 2. Detección de Enchufes, Bombillas e IoT Doméstico
+            elif [[ "$vendor_lower" =~ "tuya" ]] || [[ "$vendor_lower" =~ "espressif" ]] || [[ "$vendor_lower" =~ "tp-link" ]] || [[ "$vendor_lower" =~ "sonoff" ]] || [[ "$vendor_lower" =~ "xiaomi" ]] || [[ "$vendor_lower" =~ "yeelight" ]]; then
+                tipo_predicho="Dispositivo IoT Doméstico (Enchufe inteligente / Bombilla / Domótica)"
+            
+            # 3. Detección de Teléfonos Móviles / Tablets
+            elif [[ "$vendor_lower" =~ "apple" ]] && echo "$nmap_raw" | grep -q "62078"; then
+                tipo_predicho="Dispositivo Apple (iPhone o iPad)"
+            elif [[ "$vendor_lower" =~ "huawei" ]] || [[ "$vendor_lower" =~ "samsung" ]] || [[ "$vendor_lower" =~ "oppo" ]] || [[ "$vendor_lower" =~ "xiaomi communications" ]]; then
+                tipo_predicho="Teléfono Móvil / Smartphone Android"
+            
+            # 4. Detección de Ordenadores / Servidores
+            elif echo "$nmap_raw" | grep -iqE "windows|microsoft|workgroup|netbios"; then
+                tipo_predicho="Ordenador Personal (PC con Windows)"
+            elif echo "$nmap_raw" | grep -qE "135/|139/|445/|5357/"; then
+                tipo_predicho="Ordenador Personal / Servidor Windows (Servicios de Red Activos)"
+            elif [[ "$vendor_lower" =~ "intel" ]] || [[ "$vendor_lower" =~ "asustek" ]] || [[ "$vendor_lower" =~ "gigabyte" ]] || [[ "$vendor_lower" =~ "msi" ]]; then
+                tipo_predicho="Ordenador de Sobremesa / Portátil (PC)"
+            fi
+            
+            # --- MOSTRAR RESULTADOS PREDICCION ---
+            echo -e "${AMARILLO}🔍 RESULTADO DEL ANÁLISIS AUTOMÁTICO:${RESET}"
+            echo -e "--------------------------------------------------"
+            echo -e "${VERDE}[+] TIPO DE DISPOSITIVO:${RESET} ${BLANCO}$tipo_predicho${RESET}"
+            
+            # Extraemos y mostramos el nombre del equipo si NetBIOS o SMB lo capturaron
+            local netbios_name
+            netbios_name=$(echo "$nmap_raw" | awk '/NetBIOS computer name/ {print $5}' | tr -d ',\r')
+            if [[ -n "$netbios_name" ]]; then
+                echo -e "${VERDE}[+] NOMBRE DEL EQUIPO:${RESET} ${BLANCO}$netbios_name${RESET}"
+                echo "Nombre de red detectado: $netbios_name" >> "${out}.txt"
+            fi
+            echo -e "--------------------------------------------------"
+            echo "Tipo de dispositivo predicho: $tipo_predicho" >> "${out}.txt"
+            
+            # --- CONTROL DE DETALLES TÉCNICOS ---
+            echo
+            echo -e "${AZUL}Detalles técnicos del escaneo rápido:${RESET}"
+            
+            # Mostramos la latencia del Host
+            echo "$nmap_raw" | grep "Host is up" || true
+            
+            # Extraemos las líneas de los puertos que estén estrictamente open o filtered
+            local lineas_puertos
+            lineas_puertos=$(echo "$nmap_raw" | grep -E "^[0-9]+/tcp|^[0-9]+/udp" || true)
+            
+            if [[ -n "$lineas_puertos" ]]; then
+                echo -e "${BLANCO}PORT      STATE    SERVICE    VERSION${RESET}"
+                echo "$lineas_puertos"
+            else
+                echo -e "${ROJO}[!] Todos los puertos tácticos están cerrados o invisibles (Firewall estricto).${RESET}"
+            fi
+            
+            # Si el script de NetBIOS obtuvo respuesta, te lo pinta abajo de forma limpia
+            echo "$nmap_raw" | grep -E "Host script results:|\|_nbstat:" -A 2 || true
         ;;
         2) 
             # --stats-every 5s le obliga a Nmap a imprimir su progreso cada 5 segundos en tu pantalla
-            nmap -Pn -sS -sV --top-ports 100 --stats-every 5s --host-timeout 5m "$TARGET_IP" -oN "${out}.txt" 
+            nmap -Pn -sS -sV --top-ports 100 --stats-every 5s --host-timeout 5m "$TARGET_IP" | tee -a "${out}.txt"
         ;;
         3) 
-            nmap -Pn -sS -sV -O --top-ports 100 --script "safe" --stats-every 5s --host-timeout 5m "$TARGET_IP" -oN "${out}.txt" 
+            nmap -Pn -sS -sV -O --top-ports 100 --script "safe" --stats-every 5s --host-timeout 5m "$TARGET_IP" | tee -a "${out}.txt"
         ;;
         4) 
-            nmap -Pn -sS -sV -O --top-ports 100 --script "safe,ssl-enum-ciphers" --stats-every 5s --host-timeout 10m "$TARGET_IP" -oN "${out}.txt" 
+            nmap -Pn -sS -sV -O --top-ports 100 --script "safe,ssl-enum-ciphers" --stats-every 5s --host-timeout 10m "$TARGET_IP" | tee -a "${out}.txt" 
         ;;
     esac
 }
@@ -215,7 +287,7 @@ guardar_reporte() {
 
 preguntar_guardar() {
     echo
-    read -rp "¿Deseas exportar el resultado de $TARGET_IP a tu Escritorio? (s/n): " RESPUESTA
+    read -rp "$(echo -e "${AMARILLO}¿Deseas exportar el resultado de $TARGET_IP a tu Escritorio? (s/n): ${RESET}")" RESPUESTA
     case "${RESPUESTA,,}" in
         s|si|y|yes) guardar_reporte ;;
         *) echo -e "${AZUL}Resultado de sesión descartado.${RESET}" ;;
