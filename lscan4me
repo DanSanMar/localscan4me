@@ -2,7 +2,7 @@
 
 # ==========================================================
 # Local Network Security Audit (Home Edition)
-# Versión 2026
+# Versión 5.0 - FZF Interactive Edition
 # Uso exclusivo en redes propias o autorizadas
 # ==========================================================
 
@@ -20,7 +20,7 @@ ROJO="\e[1;31m"
 VERDE="\e[1;32m"
 RESET="\e[0m"
 
-# ---------- USUARIO ----------
+# ---------- USUARIO Y RUTAS ----------
 REAL_USER=$(logname 2>/dev/null || echo "${SUDO_USER:-$USER}")
 GRUPO_REAL=$(id -gn "$REAL_USER")
 
@@ -35,16 +35,14 @@ fi
 WORKDIR=$(mktemp -d /tmp/netaudit_XXXXXX)
 chmod 700 "$WORKDIR"
 
-HOSTS_FILE="$WORKDIR/hosts.txt"
+HOSTS_FILE="$WORKDIR/hosts_cache.txt"
 RESULTS_DIR="$WORKDIR/results"
-
 mkdir -p "$RESULTS_DIR"
 
 # ---------- LIMPIEZA ----------
 cleanup() {
     [[ -d "$WORKDIR" ]] && rm -rf "$WORKDIR"
 }
-
 trap cleanup EXIT INT TERM
 
 # ---------- LOGO ----------
@@ -55,253 +53,182 @@ mostrar_logo() {
     echo " ██   ██ ██      ██      ██    ██ ████  ████ ██      "
     echo " ███████ ██      ██      ███████ ██ ████ ██ █████    "
     echo " ██   ██ ██      ██           ██ ██  ██  ██ ██      "
-    echo " ██   ██ ███████ ███████      ██ ██      ██ ███████ "
-    echo -e "${BLANCO}   Versión 3.5 - Auditoría Avanzada y Evasión ${RESET}"
+    echo " ██   ██ ███████ ███████     ██ ██      ██ ███████ "
+    echo -e "${BLANCO}   Versión 5.0 - Motor FZF Inteligente ${RESET}"
     echo -e "${AZUL}  --------------------------------------------------${RESET}"
     echo -e "${AMARILLO}   Uso exclusivo para redes autorizadas y auditorías internas.${RESET}\n"
 }
 
-# ---------- ROOT ----------
+# ---------- VALIDACIONES ----------
 check_root() {
     if [[ $EUID -ne 0 ]]; then
-        echo -e "${ROJO}Debe ejecutarse como root${RESET}"
-        echo
-        echo "sudo $0"
+        echo -e "${ROJO}Debe ejecutarse como root:${RESET} sudo $0"
         exit 1
     fi
 }
 
-# ---------- DEPENDENCIAS ----------
 check_tools() {
-    local tools=(
-        arp-scan
-        nmap
-        ip
-        awk
-        sed
-        grep
-        mktemp
-    )
-
+    local tools=(arp-scan nmap ip awk sed grep mktemp fzf)
     for t in "${tools[@]}"; do
         if ! command -v "$t" >/dev/null 2>&1; then
-            echo -e "${ROJO}Falta: $t${RESET}"
+            echo -e "${ROJO}Falta herramienta requerida:${RESET} $t"
+            echo -e "${AMARILLO}Puedes instalarla con:${RESET} apt install $t"
             exit 1
         fi
     done
 }
 
-# ---------- RED ----------
+# ---------- DETECTAR RED ----------
 detectar_red() {
-    INTERFAZ=$(ip route show default \
-        | awk '/default/ {print $5; exit}')
+    INTERFAZ=$(ip route show default | awk '/default/ {print $5; exit}')
+    [[ -z "$INTERFAZ" ]] && { echo -e "${ROJO}No se detectó interfaz activa${RESET}"; exit 1; }
+    SUBRED=$(ip -o -f inet addr show "$INTERFAZ" | awk '{print $4}' | head -n1)
+    
+    echo -e "${VERDE}[+] Interfaz activa:${RESET} $INTERFAZ"
+    echo -e "${VERDE}[+] Subred detectada:${RESET} $SUBRED"
+}
 
-    [[ -z "$INTERFAZ" ]] && {
-        echo -e "${ROJO}No se detectó interfaz activa${RESET}"
+# ---------- RECONOCIMIENTO ÚNICO (PASO 1) ----------
+reconocimiento_inicial() {
+    echo
+    echo -e "${AZUL}[i] Realizando mapeo inicial de la red...${RESET}"
+    arp-scan --interface="$INTERFAZ" --localnet --quiet > "$HOSTS_FILE"
+    
+    # Validar que encontramos algo
+    if ! grep -q '^[0-9]' "$HOSTS_FILE"; then
+        echo -e "${ROJO}[!] No se encontraron hosts activos en la subred.${RESET}"
         exit 1
-    }
-
-    SUBRED=$(ip -o -f inet addr show "$INTERFAZ" \
-        | awk '{print $4}' \
-        | head -n1)
-
-    echo -e "${VERDE}[+] Interfaz:${RESET} $INTERFAZ"
-    echo -e "${VERDE}[+] Subred:${RESET} $SUBRED"
+    fi
 }
 
-# ---------- MENÚ ----------
-seleccionar_modo() {
+# ---------- SELECCIONAR OBJETIVO (FZF) ----------
+seleccionar_host() {
+    mostrar_logo
+    echo -e "${AZUL}Seleccione el dispositivo a analizar (Use las flechas o escriba para filtrar):${RESET}"
+    echo "----------------------------------------------------------------"
+    
+    # Preparamos la lista para FZF filtrando solo líneas con IPs válidas
+    local seleccion
+    seleccion=$(awk '/^[0-9]+\./ {print $1 " | " substr($0, index($0,$2))}' "$HOSTS_FILE" \
+                | fzf --header="[ESC] Salir | Seleccione un Host" --ansi --height=40% --border)
+    
+    if [[ -z "$seleccion" ]]; then
+        echo -e "${AMARILLO}Saliendo del auditor...${RESET}"
+        exit 0
+    fi
+
+    # Extraemos solo la IP (lo que está antes del pipe)
+    TARGET_IP=$(echo "$seleccion" | awk -F'|' '{print $1}' | tr -d '[:space:]')
+}
+
+# ---------- SELECCIONAR MODO DE ESCANEO (FZF) ----------
+seleccionar_modo_scan() {
     echo
-    echo "1) Inventario rápido"
-    echo "2) Servicios"
-    echo "3) Seguridad doméstica"
-    echo "4) Seguridad + TLS avanzado"
-    echo
+    echo -e "${AZUL}Seleccione el perfil de análisis para${RESET} ${VERDE}$TARGET_IP${RESET}:"
+    echo "----------------------------------------------------------------"
 
-    read -rp "Seleccione modo: " MODO
-
-    case "$MODO" in
-        1|2|3|4) ;;
-        *)
-            echo "Modo inválido"
-            exit 1
-            ;;
-    esac
-}
-
-# ---------- DESCUBRIMIENTO ----------
-descubrir_hosts() {
-    echo
-    echo -e "${AZUL}[1/3] Descubriendo hosts...${RESET}"
-
-    arp-scan \
-        --interface="$INTERFAZ" \
-        --localnet \
-        --quiet > "$HOSTS_FILE"
-
-    awk '/^[0-9]+\./ {print $1}' "$HOSTS_FILE"
-}
-
-# ---------- VALIDAR IP ----------
-validar_ip() {
-    # Expresión regular más estricta (0-255)
-    [[ "$1" =~ ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$ ]]
-}
-
-# ---------- PERFIL NMAP ----------
-ejecutar_scan() {
-    local host="$1"
-    local out="$RESULTS_DIR/$host"
-
-    # NOTA: El 'echo' se eliminó de aquí para evitar que se pisen en la terminal
-
-    case "$MODO" in
-        1)
-            nmap -Pn -sn "$host" -oN "${out}.txt" -oX "${out}.xml" >/dev/null 2>&1
-        ;;
-        2)
-            nmap -Pn -sS -sV --top-ports 100 --host-timeout 5m "$host" -oN "${out}.txt" -oX "${out}.xml" >/dev/null 2>&1
-        ;;
-        3)
-            nmap -Pn -sS -sV -O --top-ports 100 --script "safe" --host-timeout 5m "$host" -oN "${out}.txt" -oX "${out}.xml" >/dev/null 2>&1
-        ;;
-        4)
-            nmap -Pn -sS -sV -O --top-ports 100 --script "safe,ssl-enum-ciphers" --host-timeout 10m "$host" -oN "${out}.txt" -oX "${out}.xml" >/dev/null 2>&1
-        ;;
-    esac
-}
-
-# ---------- ANALISIS ----------
-analizar_hosts() {
-    echo
-    echo -e "${AZUL}[2/3] Analizando hosts...${RESET}"
-
-    mapfile -t HOSTS < <(
-        awk '/^[0-9]+\./ {print $1}' "$HOSTS_FILE"
+    local opciones=(
+        "1. Inspección Rápida (Ping Scan -sn)"
+        "2. Investigación de Servicios (Top 100 Puertos + Versiones -sV)"
+        "3. Seguridad Doméstica (Top 100 + Scripts Seguros + OS -O)"
+        "4. Auditoría TLS Avanzada (Cifrados SSL/TLS exhaustivos)"
+        "5. Volver a la lista de IPs"
     )
 
-    [[ ${#HOSTS[@]} -eq 0 ]] && {
-        echo "No se encontraron hosts."
-        return
-    }
+    local eleccion
+    eleccion=$(printf "%s\n" "${opciones[@]}" | fzf --header="Seleccione Perfil Nmap" --height=30% --border)
 
-    MAX_JOBS=4
-    running=0
-
-    for host in "${HOSTS[@]}"; do
-        validar_ip "$host" || continue
-
-        # El 'echo' se imprime de forma secuencial antes de lanzar el background job
-        echo -e "${AMARILLO}Escaneando:${RESET} $host"
-
-        (
-            ejecutar_scan "$host"
-        ) &
-
-        ((running+=1))
-
-        if (( running >= MAX_JOBS )); then
-            wait -n
-            ((running-=1))
-        fi
-    done
-
-    wait
+    case "$eleccion" in
+        *1.*) MODO=1 ;;
+        *2.*) MODO=2 ;;
+        *3.*) MODO=3 ;;
+        *4.*) MODO=4 ;;
+        *) return 1 ;; # Rompe y vuelve a la lista de IPs
+    esac
+    return 0
 }
 
-# ---------- MOSTRAR RESULTADOS ----------
-mostrar_resultados() {
+# ---------- LANZAR NMAP EN VIVO ----------
+ejecutar_scan() {
     echo
-    echo -e "${AZUL}[3/3] Mostrando resultados de la auditoría...${RESET}"
-    echo "======================================"
+    echo -e "${AMARILLO}==================================================${RESET}"
+    echo -e "${VERDE} AUDITANDO TARGET: ${BLANCO}$TARGET_IP${RESET}"
+    echo -e "${AMARILLO}==================================================${RESET}"
     
-    # Comprobar si hay archivos de texto generados
-    if ls "$RESULTS_DIR"/*.txt 1> /dev/null 2>&1; then
-        for f in "$RESULTS_DIR"/*.txt; do
-            [[ -f "$f" ]] || continue
-            echo
-            echo -e "${AMARILLO}--------------------------------------${RESET}"
-            # basename "$f" .txt quita la extensión para mostrar solo la IP
-            echo -e "${VERDE}Host: $(basename "$f" .txt)${RESET}"
-            echo -e "${AMARILLO}--------------------------------------${RESET}"
-            cat "$f"
-        done
-    else
-        echo -e "${ROJO}No se generaron resultados para mostrar.${RESET}"
-    fi
-    echo "======================================"
+    local out="$RESULTS_DIR/$TARGET_IP"
+
+    case "$MODO" in
+        1) nmap -Pn -sn "$TARGET_IP" -oN "${out}.txt" ;;
+        2) nmap -Pn -sS -sV --top-ports 100 --host-timeout 5m "$TARGET_IP" -oN "${out}.txt" ;;
+        3) nmap -Pn -sS -sV -O --top-ports 100 --script "safe" --host-timeout 5m "$TARGET_IP" -oN "${out}.txt" ;;
+        4) nmap -Pn -sS -sV -O --top-ports 100 --script "safe,ssl-enum-ciphers" --host-timeout 10m "$TARGET_IP" -oN "${out}.txt" ;;
+    esac
 }
 
-# ---------- REPORTE ----------
+# ---------- GUARDAR REPORTE INDIVIDUAL ----------
 guardar_reporte() {
     local fecha
     fecha=$(date +"%Y%m%d_%H%M")
-    local reporte="$DESKTOP_PATH/Reporte_Red_${fecha}.txt"
+    local reporte="$DESKTOP_PATH/Reporte_${TARGET_IP}_${fecha}.txt"
+    local source_file="$RESULTS_DIR/${TARGET_IP}.txt"
 
-    {
-        echo "======================================"
-        echo " AUDITORÍA DE RED DOMÉSTICA"
-        echo "======================================"
-        echo "Fecha: $(date)"
-        echo "Interfaz: $INTERFAZ"
-        echo "Subred: $SUBRED"
-        echo
-
-        echo "HOSTS DETECTADOS"
-        echo "--------------------------------------"
-        cat "$HOSTS_FILE"
-
-        echo
-        echo "RESULTADOS"
-        echo "--------------------------------------"
-
-        for f in "$RESULTS_DIR"/*.txt; do
-            [[ -f "$f" ]] || continue
-            echo
-            echo "--------------------------------------"
-            echo "Host: $(basename "$f" .txt)"
-            echo "--------------------------------------"
-            cat "$f"
-        done
-    } > "$reporte"
-
-    # Se aplica el chown correcto usando el grupo real
-    chown "$REAL_USER:$GRUPO_REAL" "$reporte" 2>/dev/null || true
-
-    echo
-    echo -e "${VERDE}[+] Reporte guardado en:${RESET} $reporte"
+    if [[ -f "$source_file" ]]; then
+        {
+            echo "=================================================="
+            echo " REPORTE DE AUDITORÍA INDIVIDUAL"
+            echo "=================================================="
+            echo "Objetivo: $TARGET_IP"
+            echo "Fecha:    $(date)"
+            echo "Subred:   $SUBRED"
+            echo "--------------------------------------------------"
+            cat "$source_file"
+        } > "$reporte"
+        
+        chown "$REAL_USER:$GRUPO_REAL" "$reporte" 2>/dev/null || true
+        echo -e "${VERDE}[+] Reporte guardado en:${RESET} $reporte"
+    fi
 }
 
-# ---------- PREGUNTAR GUARDADO ----------
 preguntar_guardar() {
     echo
-    read -rp "¿Deseas guardar estos resultados en un archivo de texto? (s/n): " RESPUESTA
-    case "${RESPUESTA,,}" in # Convierte a minúscula
-        s|si|y|yes)
-            guardar_reporte
-            ;;
-        *)
-            echo -e "${AZUL}Reporte descartado.${RESET}"
-            ;;
+    read -rp "¿Deseas exportar el resultado de $TARGET_IP a tu Escritorio? (s/n): " RESPUESTA
+    case "${RESPUESTA,,}" in
+        s|si|y|yes) guardar_reporte ;;
+        *) echo -e "${AZUL}Resultado de sesión descartado.${RESET}" ;;
     esac
 }
 
-# ---------- MAIN ----------
+# ---------- BUCLE PRINCIPAL ----------
 main() {
     mostrar_logo
-    check_root
-    check_tools
     detectar_red
-    seleccionar_modo
-    descubrir_hosts
-    analizar_hosts
     
-    # Nuevo flujo de finalización
-    mostrar_resultados
-    preguntar_guardar
-
-    echo
-    echo -e "${VERDE}Auditoría finalizada.${RESET}"
+    # PASO ÚNICO: Escaneo de red inicial
+    reconocimiento_inicial
+    
+    # BUCLE INFINITO: Mantiene la lista de IPs fijas en memoria sin repetir arp-scan
+    while true; do
+        # 1. Elige IP desde la caché
+        seleccionar_host
+        
+        # 2. Elige modo de escaneo (Si elige volver, salta al paso 1)
+        if ! seleccionar_modo_scan; then
+            continue
+        fi
+        
+        # 3. Ejecuta Nmap en vivo
+        ejecutar_scan
+        
+        # 4. Ofrece guardar los resultados
+        preguntar_guardar
+        
+        echo
+        echo -e "${AMARILLO}Presione [ENTER] para regresar a la lista de hosts...${RESET}"
+        read -r
+    done
 }
 
+# Inicialización obligatoria como Root y herramientas
+check_root
+check_tools
 main
